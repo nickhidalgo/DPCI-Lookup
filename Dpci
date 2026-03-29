@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DPCI Shelf Life Lookup</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Barlow:wght@300;400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+–bg: #0f1117;
+–surface: #181c27;
+–card: #1e2336;
+–border: #2c3350;
+–accent: #f5c842;
+–accent-dim: rgba(245,200,66,.12);
+–green: #3dd68c;
+–green-dim: rgba(61,214,140,.12);
+–red: #f5546a;
+–red-dim: rgba(245,84,106,.1);
+–text: #e8eaf2;
+–muted: #6b7294;
+–mono: ‘IBM Plex Mono’, monospace;
+–sans: ‘Barlow’, sans-serif;
+}
+
+body {
+background: var(–bg);
+color: var(–text);
+font-family: var(–sans);
+min-height: 100vh;
+display: flex;
+flex-direction: column;
+align-items: center;
+padding: 48px 20px 80px;
+}
+
+/* noise overlay */
+body::before {
+content: ‘’;
+position: fixed;
+inset: 0;
+background-image: url(“data:image/svg+xml,%3Csvg viewBox=‘0 0 256 256’ xmlns=‘http://www.w3.org/2000/svg’%3E%3Cfilter id=‘n’%3E%3CfeTurbulence type=‘fractalNoise’ baseFrequency=‘0.9’ numOctaves=‘4’ stitchTiles=‘stitch’/%3E%3C/filter%3E%3Crect width=‘100%25’ height=‘100%25’ filter=‘url(%23n)’ opacity=‘0.03’/%3E%3C/svg%3E”);
+pointer-events: none;
+z-index: 0;
+}
+
+.wrap {
+width: 100%;
+max-width: 640px;
+position: relative;
+z-index: 1;
+}
+
+/* header */
+header {
+margin-bottom: 40px;
+text-align: center;
+}
+.label-tag {
+display: inline-flex;
+align-items: center;
+gap: 8px;
+font-family: var(–mono);
+font-size: 10px;
+font-weight: 500;
+letter-spacing: .12em;
+text-transform: uppercase;
+color: var(–accent);
+border: 1px solid rgba(245,200,66,.3);
+border-radius: 2px;
+padding: 4px 12px;
+margin-bottom: 18px;
+}
+.label-tag::before { content: ‘▶’; font-size: 8px; }
+h1 {
+font-size: clamp(28px, 6vw, 44px);
+font-weight: 700;
+letter-spacing: -.02em;
+line-height: 1.1;
+margin-bottom: 10px;
+}
+h1 span { color: var(–accent); }
+.subtitle {
+font-size: 15px;
+color: var(–muted);
+font-weight: 300;
+}
+
+/* search box */
+.search-wrap {
+position: relative;
+margin-bottom: 24px;
+}
+.search-wrap input {
+width: 100%;
+background: var(–surface);
+border: 1.5px solid var(–border);
+border-radius: 6px;
+padding: 16px 56px 16px 20px;
+font-family: var(–mono);
+font-size: 18px;
+font-weight: 500;
+color: var(–text);
+outline: none;
+letter-spacing: .06em;
+transition: border-color .2s, box-shadow .2s;
+}
+.search-wrap input::placeholder {
+color: var(–muted);
+font-weight: 400;
+letter-spacing: .04em;
+font-size: 14px;
+}
+.search-wrap input:focus {
+border-color: var(–accent);
+box-shadow: 0 0 0 3px rgba(245,200,66,.12);
+}
+.search-icon {
+position: absolute;
+right: 18px;
+top: 50%;
+transform: translateY(-50%);
+color: var(–muted);
+font-size: 18px;
+pointer-events: none;
+}
+.clear-btn {
+position: absolute;
+right: 18px;
+top: 50%;
+transform: translateY(-50%);
+background: none;
+border: none;
+color: var(–muted);
+font-size: 18px;
+cursor: pointer;
+padding: 4px;
+display: none;
+line-height: 1;
+border-radius: 4px;
+transition: color .15s;
+}
+.clear-btn:hover { color: var(–text); }
+
+/* result card */
+.result-card {
+background: var(–card);
+border: 1.5px solid var(–border);
+border-radius: 8px;
+padding: 28px;
+margin-bottom: 16px;
+animation: slideIn .2s ease;
+display: none;
+}
+@keyframes slideIn {
+from { opacity: 0; transform: translateY(-8px); }
+to   { opacity: 1; transform: translateY(0); }
+}
+.result-card.found { border-color: var(–green); background: linear-gradient(135deg, var(–card), rgba(61,214,140,.04)); }
+.result-card.not-found { border-color: var(–red); background: linear-gradient(135deg, var(–card), rgba(245,84,106,.04)); }
+
+.result-dpci {
+font-family: var(–mono);
+font-size: 11px;
+font-weight: 500;
+letter-spacing: .1em;
+text-transform: uppercase;
+color: var(–muted);
+margin-bottom: 10px;
+}
+.result-name {
+font-size: 20px;
+font-weight: 600;
+line-height: 1.3;
+margin-bottom: 20px;
+color: var(–text);
+}
+.shelf-display {
+display: flex;
+align-items: center;
+gap: 16px;
+}
+.shelf-num {
+font-family: var(–mono);
+font-size: 52px;
+font-weight: 600;
+color: var(–green);
+line-height: 1;
+}
+.shelf-label {
+display: flex;
+flex-direction: column;
+gap: 3px;
+}
+.shelf-label .big { font-size: 16px; font-weight: 600; color: var(–text); }
+.shelf-label .small { font-size: 13px; color: var(–muted); font-weight: 300; }
+
+.prelabeled-badge {
+display: inline-flex;
+align-items: center;
+gap: 8px;
+background: var(–accent-dim);
+border: 1px solid rgba(245,200,66,.3);
+border-radius: 4px;
+padding: 8px 16px;
+font-family: var(–mono);
+font-size: 13px;
+font-weight: 500;
+color: var(–accent);
+letter-spacing: .06em;
+}
+
+.not-found-msg {
+display: flex;
+align-items: center;
+gap: 12px;
+font-size: 15px;
+color: var(–red);
+font-weight: 400;
+}
+.not-found-msg .icon { font-size: 22px; }
+
+/* divider */
+.divider {
+height: 1px;
+background: var(–border);
+margin: 24px 0;
+}
+
+/* all items table */
+.table-section { margin-top: 8px; }
+.table-header {
+display: flex;
+justify-content: space-between;
+align-items: center;
+margin-bottom: 12px;
+}
+.table-title {
+font-family: var(–mono);
+font-size: 10px;
+font-weight: 600;
+letter-spacing: .12em;
+text-transform: uppercase;
+color: var(–muted);
+}
+.count-badge {
+font-family: var(–mono);
+font-size: 10px;
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 20px;
+padding: 2px 10px;
+color: var(–muted);
+}
+
+.filter-row {
+display: flex;
+gap: 8px;
+margin-bottom: 14px;
+flex-wrap: wrap;
+}
+.filter-btn {
+background: var(–surface);
+border: 1px solid var(–border);
+border-radius: 4px;
+padding: 5px 12px;
+font-family: var(–mono);
+font-size: 10px;
+font-weight: 500;
+letter-spacing: .06em;
+color: var(–muted);
+cursor: pointer;
+transition: all .15s;
+text-transform: uppercase;
+}
+.filter-btn:hover { border-color: var(–accent); color: var(–accent); }
+.filter-btn.active { background: var(–accent-dim); border-color: var(–accent); color: var(–accent); }
+
+.table-wrap {
+border: 1px solid var(–border);
+border-radius: 6px;
+overflow: hidden;
+max-height: 420px;
+overflow-y: auto;
+}
+.table-wrap::-webkit-scrollbar { width: 6px; }
+.table-wrap::-webkit-scrollbar-track { background: var(–surface); }
+.table-wrap::-webkit-scrollbar-thumb { background: var(–border); border-radius: 3px; }
+
+table {
+width: 100%;
+border-collapse: collapse;
+font-size: 13px;
+}
+thead {
+position: sticky;
+top: 0;
+background: var(–surface);
+z-index: 2;
+}
+th {
+font-family: var(–mono);
+font-size: 9px;
+font-weight: 600;
+letter-spacing: .1em;
+text-transform: uppercase;
+color: var(–muted);
+padding: 10px 14px;
+text-align: left;
+border-bottom: 1px solid var(–border);
+}
+th:last-child { text-align: right; }
+td {
+padding: 10px 14px;
+border-bottom: 1px solid rgba(44,51,80,.5);
+vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: rgba(255,255,255,.02); cursor: pointer; }
+tr.highlighted td { background: rgba(245,200,66,.07); }
+
+.td-dpci {
+font-family: var(–mono);
+font-size: 11px;
+color: var(–muted);
+white-space: nowrap;
+}
+.td-name {
+color: var(–text);
+font-weight: 400;
+line-height: 1.4;
+}
+.td-days {
+text-align: right;
+font-family: var(–mono);
+font-weight: 600;
+white-space: nowrap;
+}
+.td-days.short { color: var(–red); }
+.td-days.medium { color: var(–accent); }
+.td-days.long { color: var(–green); }
+.td-days.pre {
+font-size: 10px;
+font-weight: 500;
+color: var(–muted);
+letter-spacing: .04em;
+}
+
+.no-results {
+padding: 40px;
+text-align: center;
+color: var(–muted);
+font-size: 14px;
+font-style: italic;
+}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="label-tag">Spring Seasonal · Bakery</div>
+    <h1>DPCI <span>Shelf Life</span> Lookup</h1>
+    <p class="subtitle">Type a DPCI number to instantly find its shelf life</p>
+  </header>
+
+  <!-- Search -->
+
+  <div class="search-wrap">
+    <input type="text" id="searchInput" placeholder="e.g. 218-13-0254 or just 0254" autocomplete="off" spellcheck="false">
+    <span class="search-icon" id="searchIcon">🔍</span>
+    <button class="clear-btn" id="clearBtn" onclick="clearSearch()">✕</button>
+  </div>
+
+  <!-- Result card -->
+
+  <div class="result-card" id="resultCard">
+    <div class="result-dpci" id="resultDpci"></div>
+    <div class="result-name" id="resultName"></div>
+    <div id="resultShelf"></div>
+  </div>
+
+  <div class="divider"></div>
+
+  <!-- Full table -->
+
+  <div class="table-section">
+    <div class="table-header">
+      <div class="table-title">All Items</div>
+      <div class="count-badge" id="countBadge">55 items</div>
+    </div>
+
+```
+<div class="filter-row">
+  <button class="filter-btn active" onclick="setFilter('all', this)">All</button>
+  <button class="filter-btn" onclick="setFilter('short', this)">≤ 7 days</button>
+  <button class="filter-btn" onclick="setFilter('medium', this)">8–30 days</button>
+  <button class="filter-btn" onclick="setFilter('long', this)">&gt; 30 days</button>
+  <button class="filter-btn" onclick="setFilter('prelabeled', this)">Prelabeled</button>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>DPCI</th>
+        <th>Item</th>
+        <th>Days</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody"></tbody>
+  </table>
+  <div class="no-results" id="noResults" style="display:none">No items match this filter.</div>
+</div>
+```
+
+  </div>
+
+</div>
+
+<script>
+const DATA = [
+  ["218-13-0254","Iced Strawberry Vanilla Sliced Loaf Cake - 8ct (Val to Spring)","6"],
+  ["218-13-0616","FD Brownie Party Platter Pink and Yellow - 16ct","31"],
+  ["218-13-0617","FD Spring Mini Frosted Cookies Pink and Yellow - 18ct","29"],
+  ["218-13-0618","FD Spring Frosted Cookies Pink and Yellow - 10ct","29"],
+  ["218-13-0619","FD Spring Frosted Cookies Pink and Yellow - 18ct","29"],
+  ["218-13-0620","St Patty's Chocolate & Vanilla mini cupcakes - 12ct","22"],
+  ["218-13-0285","FD Spring Lemon Meringue Cookies - 12.5oz/10ct","15"],
+  ["218-13-0621","Strawberry and Lemon Mini Danish 12oz - 10ct","6"],
+  ["218-13-0201","FD Strawberry Madeleines","31"],
+  ["218-13-0401","FD Strawberry Mini Donuts - 12ct","11"],
+  ["218-13-0402","Filled Mini Strawberry Ribbon Cupcakes - 12ct","22"],
+  ["218-13-0404","FD Spring Egg and Bunny Shaped Sugar Cookies","181"],
+  ["218-13-0406","FD Strawberry Frosted Cookies - 10ct","29"],
+  ["218-13-0298","Angel Food Cake (Spring to Summer)","15"],
+  ["218-13-0413","Glazed Blueberry Cake Donuts - 6ct","11"],
+  ["218-13-0598","Spring Pink and Yellow Swirl Mini Vanilla Cupcakes - 12ct","22"],
+  ["218-13-0599","Spring Pink and Yellow Vanilla Classic Cupcakes - 6ct","22"],
+  ["218-13-0600","St Patrick's Green Frosted Sugar Cookies - 10ct","29"],
+  ["218-13-0601","Spring Mini Donuts - 12ct","11"],
+  ["218-13-0602","Mini Strawberry Decorated Croissants","15"],
+  ["218-13-0603","Lemon Poppyseed Mini Muffins - 9 ct","13"],
+  ["218-13-0604","Lemon Shortbread Cookies with Drizzle","61"],
+  ["218-13-0613","Spring Hand Decorated Sugar Cookie on a Stick - 1ct","Prelabeled"],
+  ["218-13-0218","Lemon Poppyseed Muffin - 4ct","6"],
+  ["218-13-0596","Raspberry Filled Danish - 4ct","6"],
+  ["218-13-0597","Cream Cheese Filled Danish - 4ct","6"],
+  ["218-13-0591","Mini Donut Entertaining Pack","8"],
+  ["218-13-0570","Favorite Day Blueberry Danish - 14oz","15"],
+  ["218-13-0571","White Chocolate Spring Bunny Sandwich Cookies (4.8oz) - 6ct","Prelabeled"],
+  ["218-13-0572","Milk Chocolate Easter Egg & Sprinkles Sandwich Cookies - 6ct","Prelabeled"],
+  ["218-13-0573","Individual Milk Graham with Carrot Marshmallow","Prelabeled"],
+  ["218-13-0574","Individual White Chocolate Oreo","Prelabeled"],
+  ["218-13-0582","Mini Macaron Lemon Raspberry & Strawberry Jam - 4ct","11"],
+  ["218-13-0583","Mini Macaron Hazelnut Chocolate & Birthday Cake - 4ct","11"],
+  ["218-13-0584","Spring Vanilla Cake Pop Purple and Yellow with Pink Drizzle - 4ct","11"],
+  ["218-13-0588","Chocolate Tuxedo Mini Layer Cakes","61"],
+  ["218-13-0589","Lemon Linzer Tarts","61"],
+  ["218-13-0590","Spring Sugar Cookies - 6oz","181"],
+  ["218-13-0592","Gluten Free Strawberry Snack Bites - 8ct 8oz","45"],
+  ["218-13-0608","Pastel M&M Cookie with White Chocolate Chunks - 12.5oz/10ct","15"],
+  ["218-13-0609","Strawberries and Cream Cookie - 12.5oz/10ct","15"],
+  ["218-13-0610","Spring Chocolate Fudge Brownie - 8ct","15"],
+  ["218-13-0611","Easter Bunny Snack Mix - 7oz (VERSION 1)","Prelabeled"],
+  ["218-13-0614","Spring Carrot Cupcakes - 4ct","6"],
+  ["218-13-0615","Spring Cake Bites - 12.25oz/12ct","22"],
+  ["218-13-0587","Egg Shaped Cake Pop - 3ct","11"],
+  ["218-13-0286","Egg Shaped Cake Pop - 1ct","11"],
+  ["218-13-0605","Strawberry Mini Muffins - 9ct","13"],
+  ["218-13-0606","Strawberry Mini Muffin - 12ct","15"],
+  ["218-13-0607","Double Berry Mini Muffins - 9ct","13"],
+  ["218-13-0593","Chocolate Chip Snack Bites - 8ct / 8oz","45"],
+  ["218-13-0575","Pastel Rainbow White Chocolate Drops with White Nonpareils - 4oz","Prelabeled"],
+  ["218-13-0576","Enrobed White Pretzel Rainbow NP - 4oz","Prelabeled"],
+  ["218-13-0577","Enrobed Pink with Yellow Drizzle Pretzel - 4oz","Prelabeled"],
+  ["218-13-0578","Milk Chocolate Enrobed Graham with Rainbow Quins - 4oz","Prelabeled"],
+];
+
+let currentFilter = 'all';
+let highlightedDpci = null;
+
+function dayClass(val) {
+  if (val === 'Prelabeled') return 'pre';
+  const n = parseInt(val);
+  if (n <= 7) return 'short';
+  if (n <= 30) return 'medium';
+  return 'long';
+}
+
+function filterData(filter) {
+  return DATA.filter(([dpci, name, days]) => {
+    if (filter === 'all') return true;
+    if (filter === 'prelabeled') return days === 'Prelabeled';
+    const n = parseInt(days);
+    if (isNaN(n)) return false;
+    if (filter === 'short') return n <= 7;
+    if (filter === 'medium') return n >= 8 && n <= 30;
+    if (filter === 'long') return n > 30;
+    return true;
+  });
+}
+
+function renderTable(filter, searchQuery) {
+  let rows = filterData(filter);
+
+  // If there's a search query, further filter by name or dpci
+  if (searchQuery && searchQuery.length > 0) {
+    const q = searchQuery.toLowerCase().replace(/-/g, '');
+    rows = rows.filter(([dpci, name]) =>
+      dpci.replace(/-/g,'').includes(q) || name.toLowerCase().includes(q)
+    );
+  }
+
+  const tbody = document.getElementById('tableBody');
+  const noResults = document.getElementById('noResults');
+  const countBadge = document.getElementById('countBadge');
+
+  tbody.innerHTML = '';
+  countBadge.textContent = `${rows.length} item${rows.length !== 1 ? 's' : ''}`;
+
+  if (rows.length === 0) {
+    noResults.style.display = 'block';
+    return;
+  }
+  noResults.style.display = 'none';
+
+  rows.forEach(([dpci, name, days]) => {
+    const tr = document.createElement('tr');
+    if (dpci === highlightedDpci) tr.classList.add('highlighted');
+    tr.innerHTML = `
+      <td class="td-dpci">${dpci}</td>
+      <td class="td-name">${name}</td>
+      <td class="td-days ${dayClass(days)}">${days === 'Prelabeled' ? 'PRELABELED' : days + ' d'}</td>
+    `;
+    tr.addEventListener('click', () => fillSearch(dpci));
+    tbody.appendChild(tr);
+  });
+}
+
+function fillSearch(dpci) {
+  document.getElementById('searchInput').value = dpci;
+  handleSearch(dpci);
+}
+
+function setFilter(filter, btn) {
+  currentFilter = filter;
+  document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  const q = document.getElementById('searchInput').value.trim();
+  renderTable(currentFilter, q.length >= 3 ? '' : '');
+}
+
+function handleSearch(val) {
+  const q = val.trim().replace(/-/g, '').toLowerCase();
+  const card = document.getElementById('resultCard');
+  const icon = document.getElementById('searchIcon');
+  const clearBtn = document.getElementById('clearBtn');
+
+  if (val.length > 0) {
+    clearBtn.style.display = 'block';
+    icon.style.display = 'none';
+  } else {
+    clearBtn.style.display = 'none';
+    icon.style.display = 'block';
+  }
+
+  if (q.length < 3) {
+    card.style.display = 'none';
+    highlightedDpci = null;
+    renderTable(currentFilter, '');
+    return;
+  }
+
+  // exact DPCI match first
+  const exact = DATA.find(([dpci]) => dpci.replace(/-/g,'').toLowerCase() === q);
+  if (exact) {
+    showResult(exact, true);
+    highlightedDpci = exact[0];
+    renderTable(currentFilter, '');
+    return;
+  }
+
+  // partial match
+  const partial = DATA.filter(([dpci, name]) =>
+    dpci.replace(/-/g,'').toLowerCase().includes(q) || name.toLowerCase().includes(q)
+  );
+
+  if (partial.length === 1) {
+    showResult(partial[0], true);
+    highlightedDpci = partial[0][0];
+    renderTable(currentFilter, '');
+  } else if (partial.length > 1) {
+    card.style.display = 'none';
+    highlightedDpci = null;
+    renderTable(currentFilter, val.trim());
+  } else {
+    showNotFound(val.trim());
+    highlightedDpci = null;
+    renderTable(currentFilter, val.trim());
+  }
+}
+
+function showResult([dpci, name, days], found) {
+  const card = document.getElementById('resultCard');
+  document.getElementById('resultDpci').textContent = dpci;
+  document.getElementById('resultName').textContent = name;
+
+  const shelfEl = document.getElementById('resultShelf');
+  if (days === 'Prelabeled') {
+    shelfEl.innerHTML = `<div class="prelabeled-badge">🏷 Prelabeled — check packaging for date</div>`;
+  } else {
+    const cls = dayClass(days);
+    const color = cls === 'short' ? 'var(--red)' : cls === 'medium' ? 'var(--accent)' : 'var(--green)';
+    shelfEl.innerHTML = `
+      <div class="shelf-display">
+        <div class="shelf-num" style="color:${color}">${days}</div>
+        <div class="shelf-label">
+          <div class="big">day${parseInt(days) !== 1 ? 's' : ''} shelf life</div>
+          <div class="small">from production date</div>
+        </div>
+      </div>`;
+  }
+
+  card.className = 'result-card found';
+  card.style.display = 'block';
+}
+
+function showNotFound(val) {
+  const card = document.getElementById('resultCard');
+  document.getElementById('resultDpci').textContent = val;
+  document.getElementById('resultName').textContent = '';
+  document.getElementById('resultShelf').innerHTML = `
+    <div class="not-found-msg">
+      <span class="icon">⚠️</span>
+      <span>No item found for this DPCI. Double-check the number.</span>
+    </div>`;
+  card.className = 'result-card not-found';
+  card.style.display = 'block';
+}
+
+function clearSearch() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('resultCard').style.display = 'none';
+  document.getElementById('clearBtn').style.display = 'none';
+  document.getElementById('searchIcon').style.display = 'block';
+  highlightedDpci = null;
+  renderTable(currentFilter, '');
+  document.getElementById('searchInput').focus();
+}
+
+// init
+document.getElementById('searchInput').addEventListener('input', e => handleSearch(e.target.value));
+document.getElementById('searchInput').addEventListener('keydown', e => {
+  if (e.key === 'Escape') clearSearch();
+});
+
+renderTable('all', '');
+</script>
+
+</body>
+</html>
